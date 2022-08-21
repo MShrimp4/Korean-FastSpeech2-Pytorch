@@ -13,6 +13,8 @@ import hparams as hp
 import os
 import text
 
+from typing import Optional, List
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -98,19 +100,20 @@ def plot_data(data, titles=None, filename=None):
     plt.savefig(filename, dpi=200)
     plt.close()
 
-def get_mask_from_lengths(lengths, max_len=None):
-    batch_size = lengths.shape[0]
-    if max_len is None:
-        max_len = torch.max(lengths).item()
+@torch.jit.script
+def get_mask_from_lengths(lengths, _max_len:Optional[int]=None):
+    batch_size = lengths.size(0)
 
-    ids = torch.arange(0, max_len).unsqueeze(0).expand(batch_size, -1).to(device)
+    max_len = _max_len if _max_len is not None else int(torch.max(lengths).item())
+
+    ids = torch.arange(0, max_len).unsqueeze(0).expand(batch_size, -1)
     mask = (ids >= lengths.unsqueeze(1).expand(-1, max_len))
 
     return mask
 
 def get_vocgan(ckpt_path, n_mel_channels=hp.n_mel_channels, generator_ratio = [4, 4, 2, 2, 2, 2], n_residual_layers=4, mult=256, out_channels=1):
 
-    checkpoint = torch.load(ckpt_path)
+    checkpoint = torch.load(ckpt_path, map_location=device)
     model = Generator(n_mel_channels, n_residual_layers,
                         ratios=generator_ratio, mult=mult,
                         out_band=out_channels)
@@ -169,20 +172,22 @@ def pad_2D(inputs, maxlen=None):
 
     return output
 
-def pad(input_ele, mel_max_length=None):
-    if mel_max_length:
+def pad(input_ele : List[torch.Tensor], mel_max_length : Optional[int] = None):
+    if mel_max_length is not None:
         max_len = mel_max_length
     else:
         max_len = max([input_ele[i].size(0)for i in range(len(input_ele))])
 
-    out_list = list()
+    out_list : List[torch.Tensor] = list()
     for i, batch in enumerate(input_ele):
-        if len(batch.shape) == 1:
+        if batch.dim() == 1:
             one_batch_padded = F.pad(
                 batch, (0, max_len-batch.size(0)), "constant", 0.0)
-        elif len(batch.shape) == 2:
+        elif batch.dim() == 2:
             one_batch_padded = F.pad(
                 batch, (0, 0, 0, max_len-batch.size(0)), "constant", 0.0)
+        else :
+            one_batch_padded = torch.tensor([])
         out_list.append(one_batch_padded)
     out_padded = torch.stack(out_list)
     return out_padded
@@ -219,15 +224,15 @@ def _is_outlier(x, p25, p75):
     lower = p25 - 1.5 * (p75 - p25)
     upper = p75 + 1.5 * (p75 - p25)
 
-    return np.logical_or(x <= lower, x >= upper)
+    return torch.logical_or(x <= lower, x >= upper)
 
 
 def remove_outlier(x):
     """Remove outlier from x."""
-    p25 = np.percentile(x, 25)
-    p75 = np.percentile(x, 75)
+    p25 = torch.quantile(x, 0.25).item()
+    p75 = torch.quantile(x, 0.75).item()
 
-    indices_of_outliers = []
+    indices_of_outliers : List[int] = list()
     for ind, value in enumerate(x):
         if _is_outlier(value, p25, p75):
             indices_of_outliers.append(ind)
@@ -235,7 +240,7 @@ def remove_outlier(x):
     x[indices_of_outliers] = 0.0
 
     # replace by mean f0.
-    x[indices_of_outliers] = np.max(x)
+    x[indices_of_outliers] = torch.max(x)
     return x
 
 def average_by_duration(x, durs):
@@ -249,4 +254,3 @@ def average_by_duration(x, durs):
         x_char[idx] = np.mean(values) if len(values) > 0 else 0.0  # np.mean([]) = nan.
 
     return x_char.astype(np.float32)
-

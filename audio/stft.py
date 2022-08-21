@@ -63,8 +63,8 @@ class STFT(torch.nn.Module):
         input_data = input_data.squeeze(1)
 
         forward_transform = F.conv1d(
-            input_data.cuda(),
-            Variable(self.forward_basis, requires_grad=False).cuda(),
+            input_data,
+            Variable(self.forward_basis, requires_grad=False),
             stride=self.hop_length,
             padding=0).cpu()
 
@@ -98,7 +98,6 @@ class STFT(torch.nn.Module):
                 np.where(window_sum > tiny(window_sum))[0])
             window_sum = torch.autograd.Variable(
                 torch.from_numpy(window_sum), requires_grad=False)
-            window_sum = window_sum.cuda() if magnitude.is_cuda else window_sum
             inverse_transform[:, :,
                               approx_nonzero_indices] /= window_sum[approx_nonzero_indices]
 

@@ -1,9 +1,9 @@
-PAD = 0
-UNK = 1
-BOS = 2
-EOS = 3
+PAD :int = 0
+UNK :int = 1
+BOS :int = 2
+EOS :int = 3
 
-PAD_WORD = '<blank>'
-UNK_WORD = '<unk>'
-BOS_WORD = '<s>'
-EOS_WORD = '</s>'
+PAD_WORD :str = '<blank>'
+UNK_WORD :str = '<unk>'
+BOS_WORD :str = '<s>'
+EOS_WORD :str = '</s>'

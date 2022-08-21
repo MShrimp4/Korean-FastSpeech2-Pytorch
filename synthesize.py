@@ -4,8 +4,8 @@ import numpy as np
 import hparams as hp
 import os
 
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]=hp.synth_visible_devices
+#os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+#os.environ["CUDA_VISIBLE_DEVICES"]=hp.synth_visible_devices
 
 import argparse
 import re
@@ -22,7 +22,7 @@ import codecs
 from g2pk import G2p
 from jamo import h2j
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 
 def kor_preprocess(text):
     text = text.rstrip(punctuation)
@@ -47,17 +47,17 @@ def kor_preprocess(text):
 def get_FastSpeech2(num):
     checkpoint_path = os.path.join(hp.checkpoint_path, "checkpoint_{}.pth.tar".format(num))
     model = nn.DataParallel(FastSpeech2())
-    model.load_state_dict(torch.load(checkpoint_path)['model'])
+    model.load_state_dict(torch.load(checkpoint_path, map_location=torch.device('cpu'))['model'])
     model.requires_grad = False
     model.eval()
     return model
 
-def synthesize(model, vocoder, text, sentence, dur_pitch_energy_aug, prefix=''):
+def synthesize(model, vocoder, text, sentence, prefix=''):
     sentence = sentence[:10] # long filename will result in OS Error
 
     mean_mel, std_mel = torch.tensor(np.load(os.path.join(hp.preprocessed_path, "mel_stat.npy")), dtype=torch.float).to(device)
-    mean_f0, std_f0 = f0_stat = torch.tensor(np.load(os.path.join(hp.preprocessed_path, "f0_stat.npy")), dtype=torch.float).to(device)
-    mean_energy, std_energy = energy_stat = torch.tensor(np.load(os.path.join(hp.preprocessed_path, "energy_stat.npy")), dtype=torch.float).to(device)
+    mean_f0, std_f0 = torch.tensor(np.load(os.path.join(hp.preprocessed_path, "f0_stat.npy")), dtype=torch.float).to(device)
+    mean_energy, std_energy = torch.tensor(np.load(os.path.join(hp.preprocessed_path, "energy_stat.npy")), dtype=torch.float).to(device)
 
     mean_mel, std_mel = mean_mel.reshape(1, -1), std_mel.reshape(1, -1)
     mean_f0, std_f0 = mean_f0.reshape(1, -1), std_f0.reshape(1, -1)
@@ -65,8 +65,8 @@ def synthesize(model, vocoder, text, sentence, dur_pitch_energy_aug, prefix=''):
 
     src_len = torch.from_numpy(np.array([text.shape[1]])).to(device)
         
-    mel, mel_postnet, log_duration_output, f0_output, energy_output, _, _, mel_len = model(text, src_len, dur_pitch_energy_aug=dur_pitch_energy_aug, f0_stat=f0_stat, energy_stat=energy_stat)    
-
+    mel, mel_postnet, log_duration_output, f0_output, energy_output, _, _, mel_len = model(text, src_len)
+    
     mel_torch = mel.transpose(1, 2).detach()
     mel_postnet_torch = mel_postnet.transpose(1, 2).detach()
     f0_output = f0_output[0]
@@ -95,8 +95,7 @@ if __name__ == "__main__":
     parser.add_argument('--step', type=int, default=30000)
     args = parser.parse_args()
 
-    dur_pitch_energy_aug = [1.0, 1.0, 1.0]    	# [duration, pitch, energy]
-
+    
     model = get_FastSpeech2(args.step).to(device)
     if hp.vocoder == 'vocgan':
         vocoder = utils.get_vocgan(ckpt_path=hp.vocoder_pretrained_model_path)
@@ -129,7 +128,7 @@ if __name__ == "__main__":
     if mode != '4':
         for s in sentence:
             text = kor_preprocess(s)
-            synthesize(model, vocoder, text, s, dur_pitch_energy_aug, prefix='step_{}-duration_{}-pitch_{}-energy_{}'.format(args.step, dur_pitch_energy_aug[0], dur_pitch_energy_aug[1], dur_pitch_energy_aug[2]))
+            synthesize(model, vocoder, text, s, prefix='step_{}'.format(args.step))
     else:
         text = kor_preprocess(sentence)
-        synthesize(model, vocoder, text, sentence, dur_pitch_energy_aug, prefix='step_{}-pitch_{}-energy_{}'.format(args.step, dur_pitch_energy_aug[0], dur_pitch_energy_aug[1], dur_pitch_energy_aug[2]))
+        synthesize(model, vocoder, text, sentence, prefix='step_{}'.format(args.step))
