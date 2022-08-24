@@ -15,7 +15,7 @@ def extract_fs():
     model = nn.DataParallel(torch.jit.script(FastSpeech2()))
     model.load_state_dict(torch.load(checkpoint_path, map_location=torch.device('cpu'))['model'])
     model.requires_grad = False
-    model = model.module.to(device)
+    model = torch.jit.optimize_for_inference(model.module.to(device))
     model.save("fastspeech.pt")
 
 def extract_vg():
@@ -34,7 +34,7 @@ def extract_vg():
     model.requires_grad = False
     model = model.to(device)
     model.eval(True)
-    model = torch.jit.script(model)
+    model = torch.jit.optimize_for_inference(torch.jit.script(model))
     model.save("vocgan.pt")
 
 def save_tensor(tensor, path):
